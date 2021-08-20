@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<voicemail xmlns="http://www.innovaphone.com/xsd/voicemail6.xsd">
+    <function define="CheckTo">
+        <assign out="$i" value="1"/>
+        <assign out="$c" value=""/>
+        <return notcond="$to"/>
+        <index value="$to" pos="$i" size="1" out="$c"/>
+        <lib-strlen string="$c" out="$len-c" />
+        <while cond="$len-c">
+            <switch var="$c">
+                <case equal="@">
+                    <return/>          <!-- '@' found, smells like an email address -->
+                </case>
+            </switch>
+
+            <add value="$i" value2="1" out="$i"/>
+            <assign out="$c" value=""/>
+            <index value="$to" pos="$i" size="1" out="$c"/>
+            <lib-strlen string="$c" out="$len-c" />
+        </while>
+        <assign out="$to" value=""/>   <!-- doesn't seem to be an email address -->
+    </function>
+	
+	<function define="QueryEmail">
+	
+		<store-cookie root="" name="Email.txt" out="$custom_email"/> <!-- retrieve custom email from Email.txt -->
+		<switch var="$custom_email">
+			<case not-equal="">
+				<assign out="$to" value="$custom_email"/>
+				<call name="CheckTo"/>
+			</case>
+			<case equal="">
+				<pbx-query-obj name="$cn_obj" type="email" out="$to"/>
+				<call name="CheckTo"/>
+			</case>
+		</switch>
+	</function>
+	
+	<function define="CreateNumbersList">
+		<store-get-msgcount root="WL_Numbers" out-count="$cdpn_count"/>
+		<store-get-msgcount root="WL_CGPN" out-count="$cgpn_count"/>
+		<assign out="$numbers_list" value=""/>
+		<assign out="$numbers_line" value=""/>
+		<assign out="$wl_entry" value=""/>
+		<assign out="$admin_entry" value=""/>
+		<assign out="$new_line" value="&#x0d;&#x0a;" /> <!-- special syntax for new line in a text body -->
+		<assign out="$c1" value=""/>
+		<assign out="$c2" value=""/>
+		<assign out="$c_limit" value="20" /> <!-- max number of lines the voicemail can handle -->
+		<assign out="$list_loop_end" value="false" />
+		
+		<store-getnext root="WL_Numbers" out-handle="$handle" out-url="$WL_number"/>
+			<while cond="$WL_number">
+				<add value="$c1" value2="1" out="$c1"/>
+				<store-cookie root="WL_Numbers" name="$WL_number" out="$admin_entry"/> <!-- retrieve admin extension -->
+				<store-split url="$WL_number" out-file="$WL_number" />
+				<lib-strcat out-string="$admin_entry" string="(" string2="$admin_entry"/>
+				<lib-strcat out-string="$admin_entry" string="$admin_entry" string2=")"/>
+				<lib-strcat out-string="$numbers_line" string="Ext. Nr. - " string2="$WL_number"/>
+				<lib-strcat out-string="$numbers_line" string="$numbers_line" string2="$admin_entry"/>
+				<lib-strcat out-string="$numbers_line" string="$numbers_line" string2="$new_line"/>
+				<lib-strcat out-string="$numbers_list" string="$numbers_list" string2="$numbers_line"/>
+				<switch var="$c1">
+					<case equal="$c_limit">
+						<add value="$c2" value2="1" out="$c2"/>
+						<call name="CreateAttachmentFile" />
+						<assign out="$c1" value=""/>
+						<assign out="$numbers_list" value=""/>
+						<assign out="$numbers_line" value=""/>
+					</case>
+				</switch>
+				<store-getnext root="WL_Numbers" handle="$handle" out-url="$WL_number"/>
+			</while>
+
+		<store-getnext root="WL_CGPN" out-handle="$handle" out-url="$WL_cgpn"/>
+			<assign out="$list_loop_end" value="false" />
+			<while cond="$WL_cgpn">
+				<add value="$c1" value2="1" out="$c1"/>
+				<store-cookie root="WL_CGPN" name="$WL_cgpn" out="$admin_entry"/> <!-- retrieve admin extension -->
+				<store-split url="$WL_cgpn" out-file="$WL_cgpn" />
+				<lib-strcat out-string="$admin_entry" string="(" string2="$admin_entry"/>
+				<lib-strcat out-string="$admin_entry" string="$admin_entry" string2=")"/>
+				<lib-strcat out-string="$numbers_line" string="Int. Nr. - " string2="$WL_cgpn"/>
+				<lib-strcat out-string="$numbers_line" string="$numbers_line" string2="$admin_entry"/>
+				<lib-strcat out-string="$numbers_line" string="$numbers_line" string2="$new_line"/>
+				<lib-strcat out-string="$numbers_list" string="$numbers_list" string2="$numbers_line"/>
+				<switch var="$c1">
+					<case equal="$c_limit">
+						<add value="$c2" value2="1" out="$c2"/>
+						<call name="CreateAttachmentFile" />
+						<assign out="$c1" value=""/>
+						<assign out="$numbers_list" value=""/>
+						<assign out="$numbers_line" value=""/>
+					</case>
+				</switch>
+				<store-getnext root="WL_CGPN" handle="$handle" out-url="$WL_cgpn"/>
+			</while>
+			<assign out="$list_loop_end" value="true" /> <!-- set variable to true and create the last file when less than 20 number remains-->
+			<if cond="$list_loop_end">
+					<add value="$c2" value2="1" out="$c2"/>
+					<call name="CreateAttachmentFile" />
+			</if>
+
+	</function>
+	
+	<function define="CreateAttachmentFile">
+		<assign out="$attachment" value=""/>
+		<lib-strcat out-string="$attachment" string="Whitelisted_numbers_" string2="$c2"/>
+		<lib-strcat out-string="$attachment" string="$attachment" string2=".txt"/>
+		<store-cookie root="Attachments" name="$attachment" value="$numbers_list"/>
+	</function>
+	
+    <function define="Main">
+				<assign out="$new_line" value="&#x0d;&#x0a;" />
+                <call name="QueryEmail" />
+				<call name="CreateNumbersList" />
+                <if cond="$to">
+					<store-get-msgcount root="Attachments" out-count="$attach_count"/>
+					<store-getnext root="Attachments" out-handle="$handle" out-url="$attach_file"/>
+					<while cond="$attach_file">
+						<add value="$c3" value2="1" out="$c3"/>
+				
+						<lib-strcat out-string="$WL_subject" string="Whitelist has " string2="$cdpn_count"/>
+						<lib-strcat out-string="$WL_subject" string="$WL_subject" string2=" unrestricted numbers and "/>
+						<lib-strcat out-string="$WL_subject" string="$WL_subject" string2="$cgpn_count"/>
+						<lib-strcat out-string="$WL_subject" string="$WL_subject" string2=" unrestricted users - message "/>
+						<lib-strcat out-string="$WL_subject" string="$WL_subject" string2="$c3"/>
+						<lib-strcat out-string="$WL_subject" string="$WL_subject" string2=" of "/>
+						<lib-strcat out-string="$WL_subject" string="$WL_subject" string2="$attach_count"/>
+						
+						<assign out="$from" value="$to"/>    <!--from email = to address by default-->
+						<assign out="$subject" value="$WL_subject"/>
+						<assign out="$body" value="File description: Number type - number allowed(etx. responsible for that entry)"/> <!-- lista di numeri: body=name:%0D%0Aemail: -->
+						<assign out="$server" value=""/>     <!--optional, outgoing smtp server-->
+						<assign out="$user" value=""/>       <!--optional, authentication info-->
+						<assign out="$password" value=""/>   <!--optional, authentication info-->
+
+						<assign out="$file" value="$attach_file"/>       <!-- <assign out="$file" value="$vm"/> experimental -->
+
+							<!--Now send the email-->
+						<assign out="$exec-err" value="0"/>
+						<exec url="mailto:$to?from=$to&amp;subject=$subject&amp;body=$body&amp;srv=$server&amp;pwd=$password&amp;file=$file" out-error="$exec-err"/>
+						<if cond="$exec-err">
+							<!-- 2nd try -->
+							<exec url="mailto:$to?from=$to&amp;subject=$subject&amp;body=$body&amp;srv=$server&amp;pwd=$password&amp;file=$file"/>
+						</if>
+						<store-del url="$attach_file"/>
+						<store-getnext root="Attachments" handle="$handle" out-url="$attach_file"/>
+					</while>
+                </if>
+    </function>
+</voicemail>
+
+<!-- White List Service XML Script For Outgoing Calls wiki-src/xml/WhiteLst 1,0,2,0 (C) innovaphone AG 2010-2018 -->

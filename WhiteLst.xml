@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<voicemail>
+<!-- innovaphone WHITELIST SERVICE with DDI(Direct Dial In) == innovaphone AG V12.00 AZA 2017 -->
+<function define="CheckEmailService">	<switch var="$emailcode">		<case not-equal="">			<assign out="$email_WL_Numbers" value="true" />		</case>	</switch></function><function define="SendEmail">	<store-getstat root="" name="$email_script" out-error="$error"/>	<switch var="$error">		<case equal="0">			<exec url="$email_script"/>		</case>	</switch></function>
+ 
+ 
+<!-- CHECKS IF CDPN IS WHITELISTED -->
+ <function define="CheckWL">	<store-getstat root="WL_CGPN/" name="$cgpn" out-error="$error_cgpn"/>	<store-getstat root="WL_Numbers/" name="$cdpn" out-error="$error_cdpn"/>	<switch var="$error_cgpn">		<case equal="0">			<lib-strcat out-string="$DefDest" string="$DefDest" string2="$cdpn"/>			<pbx-xfer e164="$DefDest" />		<!-- if the calling number has full access to PSTN -->		</case>		<default> <!-- CGPN does not have full access -->			<switch var="$error_cdpn">
+				<case equal="0">					<assign out="$legit_caller" value="true" />					<lib-strcat out-string="$DefDest" string="$DefDest" string2="$cdpn"/>					<pbx-xfer e164="$DefDest" />		<!-- if the called number is in the whitelist and is trasferred to Default destination -->					<pbx-disc cause="18"/>				</case>				<default> <!-- number is not in the whitelisted -->					<pbx-disc cause="52"/> <!-- call is disconnected as BARRED -->				</default>
+			</switch>		</default>	</switch> </function>
+ 
+ <!-- USER MENU: Main -->
+ <function define="UserMenu">	<assign out="$digits" value=""/>
+    <assign out="$menu_dtmf" value=""/>    <assign out="$proceed" value="false"/>	<assign out="$dir" value="" />	<assign out="$Sub_Menu" value="" />	<event type="dtmf" block="false">	<pbx-getdtmfdigit out-dtmf="$digits" />	<lib-strcat string="$menu_dtmf" string2="$digits" out-string="$menu_dtmf" />		<if cond="$email_WL_Numbers">		<switch var="$menu_dtmf">			<case equal="$emailcode">				<call name="SendEmail" />				<pbx-disc />			</case>			<case equal="*77*">					<assign out="$limit" value="false"/>					<assign out="$dir" value="WL_Numbers/" />					<while notcond="$limit">						<add value="$i" value2="1" out="$i"/>						<assign out="$filename" value="$i" />						<switch var="$filename">							<case equal="40">								<assign out="$limit" value="true"/>							</case>							<default>								<store-cookie root="$dir" name="$filename" value="."/>							</default>						</switch>					</while>					<pbx-disc />			</case>			<case equal="1"> <!-- MANAGE CDPN WHITELIST -->					<assign out="$proceed" value="true"/>					<assign out="$num" value="$cgpn"/>					<assign out="$dir" value="WL_Numbers/" />					<assign out="$Sub_Menu" value="$Sub_CDPN_Menu" />					<call name="SubUserMenu" />				</case>			<case equal="2"> <!-- MANAGE CGPN WHITELIST -->					<assign out="$proceed" value="true"/>					<assign out="$num" value="$cgpn"/>					<assign out="$dir" value="WL_CGPN/" />					<assign out="$Sub_Menu" value="$Sub_CGPN_Menu" />					<call name="SubUserMenu" />				</case>			<case greater="2">				<call name="UserMenu" />			</case>			<case equal="0">				<call name="UserMenu" />			</case>		 </switch>	</if>		<if notcond="$email_WL_Numbers">		<switch var="$menu_dtmf">			<case equal="1"> <!-- MANAGE CDPN WHITELIST -->					<assign out="$proceed" value="true"/>					<assign out="$num" value="$cgpn"/>					<assign out="$dir" value="WL_Numbers/" />					<assign out="$Sub_Menu" value="$Sub_CDPN_Menu" />					<call name="SubUserMenu" />				</case>			<case equal="2"> <!-- MANAGE CGPN WHITELIST -->					<assign out="$proceed" value="true"/>					<assign out="$num" value="$cgpn"/>					<assign out="$dir" value="WL_CGPN/" />					<assign out="$Sub_Menu" value="$Sub_CGPN_Menu" />					<call name="SubUserMenu" />				</case>			<default>				<call name="UserMenu" />			</default>		 </switch>	</if>		</event>
+ 	<store-get root="Audio" name="$Main_Menu" out-url="$play_menu" />
+	<pbx-prompt url="$play_menu" repeat="false"/>
+       	
+	<while notcond="$proceed">
+        <!-- Silence. 30 Seconds -->
+        <store-get root="" name="silence.$coder" out-url="$play_silence" />
+        <pbx-prompt url="$play_silence" sec="30" repeat="true"/>
+    </while>
+ </function>
+  <!-- USER MENU: Sub section level 1  --> <function define="SubUserMenu">	<assign out="$digits" value=""/>    <assign out="$menu_dtmf" value=""/>	<event type="dtmf" block="false">	<pbx-getdtmfdigit out-dtmf="$digits" />	<lib-strcat string="$menu_dtmf" string2="$digits" out-string="$menu_dtmf" />							<switch var="$menu_dtmf">						<case equal="1"> <!-- ADD TO LIST -->								<assign out="$menu_choice" value="add"/>								<call name="CollectDigits" />						</case>						<case equal="2"> <!-- REM FROM LIST -->								<assign out="$menu_choice" value="rem"/>								<call name="CollectDigits" />						</case>						<default>							<call name="UserMenu" />						</default>					 </switch>		</event>	<store-get root="Audio" name="$Sub_Menu" out-url="$play_menu" />	<pbx-prompt url="$play_menu" repeat="false"/>       		<while notcond="$proceed">        <!-- Silence. 30 Seconds -->        <store-get root="" name="silence.$coder" out-url="$play_silence" />        <pbx-prompt url="$play_silence" sec="30" repeat="true"/>    </while> </function>
+ 
+ <!-- COLLECT DTMF DIGITS -->
+ 
+ <function define="CollectDigits">
+    <assign out="$dialed_number" value=""/>
+    <assign out="$usr_number_ok" value="false"/>
+    <assign out="$usr_dtmf" value=""/>	
+    <event type="dtmf" block="false">
+        <assign out="$usr_number_timeout" value="false"/>
+        <pbx-getdtmfdigit out-dtmf="$usr_dtmf" />				<if cond="$usr_number_ok"> <!-- continue adding/removing numbers -->		    <switch var="$usr_dtmf">				<case equal="9">					<call name="CollectDigits"/>				</case>				<case equal="*">					<pbx-disc />				</case>			</switch>		</if>
+        <switch var="$usr_dtmf">
+            <case equal="#">
+                <switch var="$file_check_stat">
+                    <case equal="2"> <!-- ====== number not found ===== -->
+                    	<switch var="$menu_choice">
+                    		<case equal="add"> <!-- create number entry only if arriving from menu 1  -->								<if notcond="$num">									<assign out="$num" value="." />								</if>
+		                       	<store-cookie root="$dir" name="$dialed_number" value="$num"/>
+		                        <assign out="$usr_number_ok" value="true"/>
+		                    </case>
+		                    <case equal="rem">
+		                    	<pbx-disc />
+		                    </case>
+		                </switch>
+                    </case>
+                    <case equal="0"> <!-- ====== number found ===== -->
+                    <switch var="$menu_choice">
+                    		<case equal="rem"> <!-- delete number entry only if arriving from menu 2  -->
+		                       	<store-del root="$dir" name="$dialed_number"/>
+		                        <assign out="$usr_number_ok" value="true"/>
+                        </case>
+		                    <case equal="add">
+		                    	<pbx-disc />
+		                    </case>
+		                </switch>
+                    </case>
+                </switch>
+            </case>
+        </switch>
+        <lib-strcat string="$dialed_number" string2="$usr_dtmf" out-string="$dialed_number" />
+        <lib-strlen string="$dialed_number" out="$len-usr_number" />
+        <store-getstat root="$dir" name="$dialed_number" out-error="$file_check_stat"/>
+    </event>
+    <switch var="$menu_choice">
+    	<case equal="add">
+				<store-get root="Audio" name="$Add_Menu" out-url="$play_opt_1" />
+			    <pbx-prompt url="$play_opt_1" />
+		</case>
+		<case equal="rem">
+				<store-get root="Audio" name="$Rem_Menu" out-url="$play_opt_2" />
+			    <pbx-prompt url="$play_opt_2" />
+		</case>
+	</switch>
+      
+    <while notcond="$usr_number_ok">
+                <!-- Silence. 30 Seconds -->
+            <store-get root="" name="silence.$coder" out-url="$play_silence" />
+            <pbx-prompt url="$play_silence" sec="30" repeat="true"/>
+    </while>	
+    <while cond="$usr_number_ok"> <!-- continue adding/removing numbers -->		<store-get root="Audio" name="$Continue_Menu" out-url="$continue_opt" />		<pbx-prompt url="$continue_opt" sec="30" repeat="true"/>    </while>
+</function>
+
+
+
+ <function define="Main">
+  <!-- retrieve CGPN and CDPN -->	<pbx-getcallinfo out-cgpn="$cgpn" out-cdpn="$cdpn" out-leg2="$leg2" out-leg2-name="$leg2-name" />  <!-- check Language -->
+	<store-cookie root="" name="Language.txt" out="$Lang"/>
+	
+ <!-- localize announcement files -->
+	<lib-strcat out-string="$Main_Menu" string="$Lang" string2="_Menu_Choice.$coder"/>	<lib-strcat out-string="$Sub_CDPN_Menu" string="$Lang" string2="_Sub_CDPN_Menu.$coder"/>	<lib-strcat out-string="$Sub_CGPN_Menu" string="$Lang" string2="_Sub_CGPN_Menu.$coder"/>	<lib-strcat out-string="$Add_Menu" string="$Lang" string2="_Dial.$coder"/>
+	<lib-strcat out-string="$Rem_Menu" string="$Lang" string2="_Dial.$coder"/>	<lib-strcat out-string="$Continue_Menu" string="$Lang" string2="_Continue.$coder"/>
+	
+ <!-- retrieve min/max internal extensions number lenght -->
+	<store-cookie root="" name="AdminPIN.txt" out="$AdminPIN"/>
+	<store-cookie root="" name="PrefixIN.txt" out="$TrunkCode"/> <!-- retrieve Trunk prefix -->	<store-cookie root="" name="Default_NOK.txt" out="$DiscDest"/>  <!-- retrieve default forwarding destination -->	<store-cookie root="" name="Default_WL.txt" out="$DefDest"/>  <!-- retrieve default forwarding destination for whitelisted calls -->	<store-cookie root="" name="Email_Code.txt" out="$emailcode"/> <!-- retrieve Email Code for Email service from Email_Code.txt-->	<assign out="$email_WL_Numbers" value="false" /> <!-- Email service disabled at startup -->    <store-get root="" name="WhiteLst_email.xml" out-url="$email_script" /> <!-- path to WhiteLst_email.xml -->	<assign out="$legit_caller" value="false" /> <!-- caller is not legit yet at startup -->
+	
+	<switch var="$cdpn">		<case equal="$AdminPIN">			<call name="CheckEmailService" />			<call name="UserMenu" />		</case>		<default><!-- verify if call is transferred from TRUNK OBJECT -->			<if cond="$leg2-name">				<call name="CheckWL" />			</if>			<pbx-disc cause="52"/>		</default>	</switch> 
+</function> 
+ 
+</voicemail>
+<!-- White List Service XML Script For Outgoing Calls wiki-src/xml/WhiteLst 1,0,2,0 (C) innovaphone AG 2010-2018 -->
